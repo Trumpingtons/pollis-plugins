@@ -9,7 +9,11 @@ Each panel in the toolbox is an independent copy of the Pollis panel, with its k
 
 ## Install the plugin
 
-In Pollis, open the Extensions pane, find the **Agent Plugins** section (or type `@agentPlugins` in the search box), and install **pollis-agents** (from the `Trumpingtons/pollis-plugins` marketplace). The plugin needs Node.js 22 or later on your computer, and the internet: it reads the panels from the public Pollis repository.
+In Pollis, there is nothing to install: use **Toolboxes > Pollis Agents > Create a Panel...** or **Package a Toolbox...**. Pollis downloads the skills (the files listed in `files.json`) to `~/.pollis/agents/pollis-agents` and starts a coding agent in a terminal, pointed at the skill. The first time, it asks which agent to use: Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Cursor Agent, OpenCode or Goose (the last two can also run on local models, through Ollama or LM Studio), or any other command; change it later with **Pollis Agents: Choose Coding Agent...**. Creating a panel asks a lot of the model: a small local model will make mistakes the validator cannot catch.
+
+In Claude Code, the plugin can also be installed directly: `/plugin marketplace add Trumpingtons/pollis-plugins`, then `/plugin install pollis-agents@pollis`.
+
+Either way, the skills need Node.js 22 or later on your computer, and the internet: they read the panels from the public Pollis repository.
 
 ## Build a toolbox
 
@@ -82,6 +86,24 @@ node scripts/validatePanel.mjs garch.toml
 ```
 
 The panel format is described in `skills/create-panel/reference.md`. A panel has no code of its own: it cannot have custom illustrations, styles or data connectors.
+
+## Create panels from a request
+
+Instead of answering questions, write a request file: for each panel only the topic, the audience, the methods (the tabs), the packages and the menu, and the agent decides the rest. The file is Julia, so one request can make many panels:
+
+```julia
+toolbox(name = "pollis-toolbox-npreg", displayName = "Nonparametric Regression", author = "Ana Silva")
+
+audience = "students"
+for (topic, methods) in [
+        "Scatterplot smoothing" => ["LOESS", "Smoothing splines", "Linear regression"],
+        "Kernel density estimation" => ["Gaussian kernel", "Epanechnikov kernel"]]
+    panel(topic = topic, audience = audience, methods = methods,
+          menu = "Model > Nonparametric Regression")
+end
+```
+
+Then ask the agent: *Create the panels of panels.jl.* It runs the file with `scripts/readRequest.jl`, which writes `panels.request.toml` (the list of panels, loops and conditions resolved), writes and checks the panels one by one, and builds the toolbox. Without Julia, write the same fields as TOML, in `[toolbox]` and `[[panel]]` tables. The fields are listed at the top of `scripts/readRequest.jl`.
 
 ## Install the toolbox
 

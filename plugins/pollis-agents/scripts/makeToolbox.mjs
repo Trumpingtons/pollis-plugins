@@ -36,6 +36,7 @@
 //   displayName = "Statistics 101"
 //   description = "..."
 //   version = "1.0.0"                      optional, default 1.0.0
+//   author = "Ana Silva"                   optional: shown in Pollis as the toolbox's publisher (default: pollis)
 //   prefix = "stats101"                    optional, default: the name without pollis-toolbox-
 //
 //   [[menu]]                               one or more: where the entries go
@@ -434,7 +435,8 @@ async function build(source, specFile, outDir, overwrite) {
 		description: typeof extension.description === 'string' ? extension.description : '',
 		version,
 		publisher: 'pollis',
-		license: 'AGPL-3.0-or-later',
+		...(typeof extension.author === 'string' && extension.author.trim() ? { author: extension.author.trim() } : {}),
+		license: 'AGPL-3.0',
 		icon: 'icon.png',
 		engines: { vscode: '*' },
 		categories: ['Other'],
@@ -465,7 +467,7 @@ async function build(source, specFile, outDir, overwrite) {
 		'',
 		'## License',
 		'',
-		'AGPL-3.0-or-later.',
+		'AGPL-3.0',
 		'',
 	].join('\n'));
 

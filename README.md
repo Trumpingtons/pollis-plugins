@@ -2,7 +2,7 @@
 
 Agent plugins for [Pollis](https://github.com/saragga/pollis), the desktop environment for statistical modelling, simulation and optimisation built on Code - OSS and Julia.
 
-This repository is a plugin marketplace (`.claude-plugin/marketplace.json`). Pollis lists it by default in its `chat.plugins.marketplaces` setting, so its plugins appear in the **Agent Plugins** section of the Extensions pane, ready to install.
+This repository is a plugin marketplace (`.claude-plugin/marketplace.json`). Pollis starts the Pollis Agents skills from its **Toolboxes > Pollis Agents** menu, with the coding agent the user picks: it downloads the files listed in `plugins/pollis-agents/files.json`, so a file added to the plugin must be listed there too. Claude Code users can also add the marketplace directly: `/plugin marketplace add Trumpingtons/pollis-plugins`.
 
 | Plugin | What it does |
 |---|---|

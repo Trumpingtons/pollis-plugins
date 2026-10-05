@@ -31,6 +31,7 @@ name = "pollis-toolbox-stats101"     # lower case letters, digits and hyphens
 displayName = "Statistics 101"
 description = "The panels of the Statistics 101 course."
 version = "1.0.0"                    # optional
+author = "Ana Silva"                 # optional: shown in Pollis as the publisher
 
 [[menu]]                             # one or more
 id = "stats101"
@@ -51,7 +52,7 @@ title = "1. Linear Regression"       # optional: the menu title, default the one
 
 ## Steps
 
-1. **Understand the request.** Find each panel the user names with `list`; if a name matches several panels or none, ask. If something is missing (name, display name, description, where the entries go, their order), ask once, offering sensible defaults. Do not invent a description: ask, or propose one for approval.
+1. **Understand the request.** Find each panel the user names with `list`; if a name matches several panels or none, ask. If something is missing (name, display name, description, the author to show as publisher, where the entries go, their order), ask once, offering sensible defaults. Do not invent a description: ask, or propose one for approval.
 2. **Write the spec** as a `.toml` file in the folder the user wants (default: the open workspace folder), and show it.
 3. **Run `build`** with `--out` that folder (`--overwrite` only when the user agreed to replace an existing toolbox folder of that name). It stops with a clear message on what cannot be packaged: a NOT PORTABLE panel, a panel of the user's own with errors, a gallery or dialog (not a panel), an unknown command, panel or menu, a panel listed twice. Report it, and continue without the entry only if the user agrees.
 4. **Finish the README** (`<folder>/<name>/README.md`): fill the "What it covers" column, one short line per panel, from the panel's TOML in `<folder>/<name>/panels/` (its models and key points), for example "Ordinary, weighted and robust least squares, with diagnostics". Keep the rest. Show it to the user, then run `pack` on the toolbox folder.

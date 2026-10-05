@@ -1,0 +1,12 @@
+{
+	"version": 1,
+	"files": [
+		"skills/create-panel/SKILL.md",
+		"skills/create-panel/reference.md",
+		"skills/package-toolbox/SKILL.md",
+		"scripts/pollis.mjs",
+		"scripts/validatePanel.mjs",
+		"scripts/makeToolbox.mjs",
+		"scripts/readRequest.jl"
+	]
+}

@@ -1,6 +1,6 @@
 ---
 name: create-panel
-description: "Create a new Pollis panel on a topic the user chooses: write its panel TOML (models, key points, decision table, inputs, example code, Next Steps, references), its wiki pages and notebook tutorials, check it with the validator, and package it as a toolbox. Triggers include 'create a panel', 'make a new panel on', 'write a Pollis panel for', 'Panel Agent', 'add a panel about', 'I want a panel for my course on'."
+description: "Create a new Pollis panel on a topic the user chooses: write its panel TOML (models, key points, decision table, inputs, example code, Next Steps, references), its wiki pages and notebook tutorials, check it with the validator, and package it as a toolbox. Triggers include 'create a panel', 'make a new panel on', 'write a Pollis panel for', 'Panel Agent', 'add a panel about', 'I want a panel for my course on', 'create the panels of this request', 'run my panel request'."
 ---
 
 # Create a Panel
@@ -14,7 +14,12 @@ Two files of this plugin do the mechanical work:
 
 It needs Node.js 22 or later (`node --version`) and the internet; if Node is missing or older, tell the user to install it from nodejs.org and stop.
 
-## 1. Ask
+There are two ways to work:
+
+- **From a request file**, when the user names one (`.jl` or `.toml`) or asks to create the panels of a request: no questions, every panel it asks for, one toolbox. Go to *1b*.
+- **By interview**, otherwise: go to *1a*. Mention once, at the start, that a request file can do it without questions (*1b*).
+
+## 1a. Ask
 
 Ask in one message, and wait for the answers:
 
@@ -25,6 +30,42 @@ Ask in one message, and wait for the answers:
 - whether it goes into a new toolbox or an existing toolbox spec.
 
 Then propose, in a short list: the panel id (lower case letters, digits and hyphens, short: `garch`, `survival`), its title, the model ids and labels, the inputs of each model, and the Next Steps. Go on when the user agrees.
+
+## 1b. Read the request
+
+A request file says, for each panel, only what the user decides; you decide the rest. It is Julia, so it can loop over topics and branch on the audience:
+
+```julia
+toolbox(name = "pollis-toolbox-npreg", displayName = "Nonparametric Regression", author = "Ana Silva")
+
+audience = "students"
+for (topic, methods) in [
+        "Scatterplot smoothing" => ["LOESS", "Smoothing splines", "Linear regression"],
+        "Kernel density estimation" => ["Gaussian kernel", "Epanechnikov kernel"]]
+    panel(topic = topic, audience = audience, methods = methods,
+          menu = "Model > Nonparametric Regression")
+end
+```
+
+- `toolbox` (once): `name` (`pollis-toolbox-...`), `displayName`, and optional `description`, `author`, `version`.
+- `panel` (once per panel): `topic`, `methods` (1 to 8: the tabs), and optional `audience`, `packages`, `menu`, `title`, `id`, `notes`. `menu` is a top menu (Toolboxes, Explore, Model, Simulate, Optimise) or a submenu id, then optionally `>` and the title of a submenu; default `Toolboxes > <displayName>`. `notes` is anything else the user wants, in their words.
+
+Never interpret the Julia yourself: run it with `readRequest.jl`, in the same `scripts` folder:
+
+```
+julia "<plugin>/scripts/readRequest.jl" "<request>.jl"
+```
+
+It runs the file and writes `<request>.request.toml` next to it: the toolbox and the list of panels, loops and conditions resolved (a `.toml` request, the same fields as `[toolbox]` and `[[panel]]` tables, is only checked). On a `Request error`, tell the user the message and stop. If Julia is missing, a `.jl` request cannot be read: say so, and offer the interview or a `.toml` request.
+
+Then, without asking:
+
+- **Write the panels one at a time**, in the order of the list: steps 2, 3 and 4 for each, before the next. Say one line as each starts and ends (`2 of 5: Kernel density estimation, valid, code ran`).
+- **Make the choices of 1a yourself**: the id (the request's `id`, or a short one from the topic), the title (the request's `title`, or one from the topic), the model ids and labels from `methods`, the inputs, the Next Steps. Use the request's `packages` when given, otherwise the packages you would propose.
+- **Fit the panel to the audience**: for `students` (or a course), plain key points, few inputs with defaults that work, wiki pages that explain from first principles, a notebook that goes slowly; for `research` (or researchers), more options and diagnostics, the primary papers in the references; anything else, read it as the user's description of who will use the panel. With no audience, write for a general user of Pollis.
+- **When a panel cannot be written** (no working Julia package for a method, the validator or Julia still failing after you fixed what you could), leave it out, say why in the report, and go on with the next.
+- **Pick up where a run stopped**: a long request can outlast one session. Before writing a panel, look in `pollis-panels/` for its TOML, which you start with the comment line `# Request topic: <topic>`: if it is there and the validator reports no errors, keep it and go on to the next. Tell the user how many panels were already done.
+- Write the panels in a folder `pollis-panels/` next to the request file, and the toolbox spec next to the request file, as `<toolbox name>.toml`.
 
 ## 2. Write
 
@@ -75,9 +116,11 @@ title = "GARCH Models"                # optional menu title, default: the panel'
 
 The builder copies the panel's wiki and notebook folders with it. A toolbox can mix new panels and Pollis' own.
 
+From a request, write the spec yourself and build it without asking: `[extension]` from `toolbox`; one `[[menu]]` per distinct `menu` of the panels, in the order they first appear (`menu` is the part before `>`, `title` the part after, `id` a short id from that title; a `menu` with no `>` is `inline = true` in that menu), and its panels as `[[menu.items]]` in the request's order. Then finish the README and pack, as the `package-toolbox` skill says.
+
 ## 6. Report
 
-Tell the user, briefly:
+Tell the user, briefly (from a request, one table: panel, validator, code run, left out and why):
 
 - the files written;
 - the validator's result, and whether the code ran in Julia (and with which package versions);
