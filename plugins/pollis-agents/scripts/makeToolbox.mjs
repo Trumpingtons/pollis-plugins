@@ -47,82 +47,36 @@
 //   order = 4
 //
 //   [[menu.items]]                         the entries, in the order wanted
-//   command = "chiara.statistics.lm"       the origin menu entry's command, or panel = "lm"
+//   command = "chiara.statistics.lm"       the origin menu entry's command, or panel = "lm", or
+//                                          toml = "garch.toml", a panel of your own (below)
 //   title = "Linear Regression"            optional menu title, default: the origin's menu title
 //   group = "1_panels"                     optional, default "1_panels" (inline: the menu's group)
 //   order = 1                              optional, default: the position in the list
+//
+// A panel of your own (the create-panel skill writes them) is a panel TOML, relative to the spec,
+// whose id is its file name (garch.toml: garch). Its wiki and notebook files are looked for in
+// wiki/ and notebooks/ next to it (wiki/garch/overview.md), as validatePanel.mjs does, and their
+// folders are copied into the toolbox; a file that is not there must be one of Pollis' own. The
+// panel must pass validatePanel.mjs, which the build runs first.
+//
+// Every TOML is read with Pollis' own parser, build/pollis/pollisToml.mjs, downloaded with the
+// panel index (pollis.mjs). In the spec, a comment may also follow a value.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as zlib from 'node:zlib';
+import { DEFAULT_SOURCE, fail, materialRoots, Source, UserError } from './pollis.mjs';
+import { builtInFiles, sortedProblems, validate } from './validatePanel.mjs';
 
-const DEFAULT_SOURCE = 'https://raw.githubusercontent.com/saragga/pollis/main/';
-const INDEX_PATH = 'build/pollis/panel-index.json';
 const NAME = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
- * @typedef {{ id: string; model?: string; menuTitles: string[] }} IndexCommand
- * @typedef {{ id: string; title?: string; source: string; commands: IndexCommand[]; portable: boolean; reason?: string;
- *   defaultModel?: string; decisionFirstColumn?: string; toml?: string; wikiRoot?: string; notebookRoot?: string;
- *   wikis?: string[]; notebooks?: string[]; packages?: string[] }} IndexPanel
- * @typedef {{ version: number; icon: string; menus: { topLevel: string[]; submenus: string[] }; panels: IndexPanel[] }} PanelIndex
- * @typedef {{ [key: string]: unknown }} TomlTable
+ * @typedef {import('./pollis.mjs').Table} TomlTable
+ * @typedef {import('./pollis.mjs').IndexPanel} IndexPanel
+ * @typedef {import('./pollis.mjs').IndexCommand} IndexCommand
+ * @typedef {import('./pollis.mjs').PanelIndex} PanelIndex
+ * @typedef {import('./pollis.mjs').Parser} Parser
  */
-
-class UserError extends Error { }
-
-/** @param {string} message @returns {never} */
-function fail(message) {
-	throw new UserError(message);
-}
-
-// --- Reading Pollis' files --------------------------------------------------------------------
-
-/** Reads the files of Pollis from a URL (the public repository) or a local folder. */
-class Source {
-	/** @param {string} location */
-	constructor(location) {
-		this.local = !/^https?:\/\//.test(location);
-		this.location = this.local ? path.resolve(location) : location.replace(/\/?$/, '/');
-	}
-
-	/** @param {string} file a path relative to the repository root @returns {Promise<Buffer>} */
-	async read(file) {
-		if (this.local) {
-			return fs.promises.readFile(path.join(this.location, ...file.split('/')));
-		}
-		const url = this.location + file.split('/').map(encodeURIComponent).join('/');
-		let lastError;
-		for (let attempt = 0; attempt < 3; attempt++) {
-			try {
-				const response = await fetch(url);
-				if (response.status === 404) {
-					fail(`${url} does not exist`);
-				}
-				if (!response.ok) {
-					throw new Error(`${url} returned ${response.status}`);
-				}
-				return Buffer.from(await response.arrayBuffer());
-			} catch (error) {
-				if (error instanceof UserError) {
-					throw error;
-				}
-				lastError = error;
-				await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
-			}
-		}
-		fail(`cannot download ${url} (${lastError instanceof Error ? (lastError.cause instanceof Error ? lastError.cause.message : lastError.message) : String(lastError)}). Check the internet connection, or pass --source with a local copy of the Pollis repository`);
-	}
-
-	/** @returns {Promise<PanelIndex>} */
-	async index() {
-		const index = JSON.parse((await this.read(INDEX_PATH)).toString('utf-8'));
-		if (index.version !== 1 || !Array.isArray(index.panels)) {
-			fail(`${INDEX_PATH} has a format this script does not know: update the Pollis Extension Agent plugin`);
-		}
-		return index;
-	}
-}
 
 /**
  * Runs `fn` on every item, at most `limit` at a time.
@@ -139,26 +93,13 @@ async function eachLimited(items, limit, fn) {
 	await Promise.all(workers);
 }
 
-// --- TOML (the subset Pollis uses, as in Pollis' own parser, plus comments after a value) ---------
+// --- TOML -----------------------------------------------------------------------------------------
 
-/** @param {TomlTable} root @param {string} dotPath */
-function navigatePath(root, dotPath) {
-	const parts = dotPath.split('.');
-	let current = root;
-	for (let i = 0; i < parts.length - 1; i++) {
-		if (!Object.hasOwn(current, parts[i])) {
-			current[parts[i]] = {};
-		}
-		current = /** @type {TomlTable} */ (current[parts[i]]);
-	}
-	return { parent: current, key: parts[parts.length - 1] };
-}
-
-/** A value without the comment after it (a `#` outside quotes). @param {string} value */
-function stripComment(value) {
+/** A line without the comment after it (a `#` outside quotes). @param {string} line */
+function stripComment(line) {
 	let quote = '';
-	for (let i = 0; i < value.length; i++) {
-		const ch = value[i];
+	for (let i = 0; i < line.length; i++) {
+		const ch = line[i];
 		if (quote) {
 			if (ch === '\\' && quote === '"') {
 				i++;
@@ -168,126 +109,29 @@ function stripComment(value) {
 		} else if (ch === '"' || ch === '\'') {
 			quote = ch;
 		} else if (ch === '#') {
-			return value.slice(0, i).trim();
+			return line.slice(0, i).trimEnd();
 		}
 	}
-	return value.trim();
+	return line;
 }
 
-/** @param {string} str @returns {unknown} */
-function parseValue(str) {
-	if (str.startsWith('"') && str.endsWith('"') && str.length >= 2) {
-		return str.slice(1, -1).replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-	}
-	if (str.startsWith('\'') && str.endsWith('\'') && str.length >= 2) {
-		return str.slice(1, -1);
-	}
-	if (str === 'true' || str === 'false') {
-		return str === 'true';
-	}
-	if (/^-?\d+(\.\d+)?$/.test(str)) {
-		return Number(str);
-	}
-	if (str.startsWith('[') && str.endsWith(']')) {
-		const items = [];
-		let current = '';
-		let quote = '';
-		for (const ch of str.slice(1, -1)) {
-			if (quote) {
-				current += ch;
-				if (ch === quote) {
-					quote = '';
-				}
-			} else if (ch === '"' || ch === '\'') {
-				quote = ch;
-				current += ch;
-			} else if (ch === ',') {
-				items.push(parseValue(current.trim()));
-				current = '';
-			} else {
-				current += ch;
-			}
-		}
-		if (current.trim()) {
-			items.push(parseValue(current.trim()));
-		}
-		return items;
-	}
-	return str;
+/**
+ * The spec, read with Pollis' parser after the comments that follow values are removed (a spec
+ * has no multi-line strings).
+ * @param {Parser} parser @param {string} text
+ */
+function parseSpec(parser, text) {
+	return parser.parseToml(text.replace(/\r\n/g, '\n').split('\n').map(stripComment).join('\n'));
 }
 
-/** @param {string} content @returns {TomlTable} */
-function parseToml(content) {
-	/** @type {TomlTable} */
-	const result = {};
-	let section = result;
-	/** @type {Map<string, TomlTable>} */
-	const lastArrayElement = new Map();
-	const lines = content.replace(/\r\n/g, '\n').split('\n');
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i].trim();
-		if (!line || line.startsWith('#')) {
-			continue;
-		}
-		const header = stripComment(line);
-		if (header.startsWith('[[') && header.endsWith(']]')) {
-			const arrayPath = header.slice(2, -2).trim();
-			const parts = arrayPath.split('.');
-			let base = result;
-			let childPath = arrayPath;
-			for (let p = parts.length - 1; p >= 1; p--) {
-				const prefix = parts.slice(0, p).join('.');
-				const element = lastArrayElement.get(prefix);
-				if (element) {
-					base = element;
-					childPath = parts.slice(p).join('.');
-					break;
-				}
-			}
-			const { parent, key } = navigatePath(base, childPath);
-			if (!Array.isArray(parent[key])) {
-				parent[key] = [];
-			}
-			section = {};
-			/** @type {TomlTable[]} */ (parent[key]).push(section);
-			lastArrayElement.set(arrayPath, section);
-			continue;
-		}
-		if (header.startsWith('[') && header.endsWith(']')) {
-			const { parent, key } = navigatePath(result, header.slice(1, -1).trim());
-			if (!Object.hasOwn(parent, key)) {
-				parent[key] = {};
-			}
-			section = /** @type {TomlTable} */ (parent[key]);
-			continue;
-		}
-		const eq = line.indexOf('=');
-		if (eq <= 0) {
-			continue;
-		}
-		const key = line.slice(0, eq).trim().replace(/^["']|["']$/g, '');
-		const value = line.slice(eq + 1).trim();
-		if (value === '\'\'\'' || value === '"""') {
-			const body = [];
-			for (i++; i < lines.length && lines[i].trimEnd() !== value; i++) {
-				body.push(lines[i]);
-			}
-			section[key] = body.join('\n');
-			continue;
-		}
-		if ((value.startsWith('\'\'\'') || value.startsWith('"""')) && value.length > 6 && value.endsWith(value.slice(0, 3))) {
-			section[key] = value.slice(3, -3);
-			continue;
-		}
-		section[key] = parseValue(stripComment(value));
-	}
-	return result;
+/** @param {unknown} value @returns {TomlTable[]} */
+function tables(value) {
+	return Array.isArray(value) ? value : [];
 }
 
-/** @param {TomlTable} toml @returns {TomlTable[]} the wiki and notebook entries of a panel TOML */
+/** The wiki and notebook entries of a panel TOML, by the toolbox folder they go in. @param {TomlTable} toml */
 function materialEntries(toml) {
-	const list = (/** @type {unknown} */ value) => Array.isArray(value) ? /** @type {TomlTable[]} */ (value) : [];
-	return [...list(toml.wikis), ...list(toml.notebookSections).flatMap(section => list(section.notebooks))];
+	return { wiki: tables(toml.wikis), notebooks: tables(toml.notebookSections).flatMap(section => tables(section.notebooks)) };
 }
 
 // --- Resolving the spec -------------------------------------------------------------------------
@@ -346,6 +190,122 @@ function renameMaterial(text, renames, expected) {
 	return renamed;
 }
 
+/**
+ * A panel the toolbox copies: what its package.json entry needs, and how to write its files.
+ * @typedef {{ panelId: string; title: string; menuTitle?: string; defaultModel?: string; decisionFirstColumn?: string;
+ *   packages: string[]; summary: string; write: () => Promise<void> }} PanelCopy
+ * @typedef {(kind: string, to: string, origin: string) => void} ClaimFolder
+ */
+
+/**
+ * A copy of a Pollis panel: its TOML, wiki and notebook files downloaded from Pollis.
+ * @param {{ panel: IndexPanel; command: IndexCommand | undefined }} resolved
+ * @param {{ parser: Parser; source: Source; prefix: string; folder: string; claimFolder: ClaimFolder; downloads: { from: string; to: string }[] }} context
+ * @returns {PanelCopy}
+ */
+function pollisPanel({ panel, command }, { parser, source, prefix, folder, claimFolder, downloads }) {
+	const { toml, wikiRoot, notebookRoot } = panel;
+	if (!panel.portable || !toml || !wikiRoot || !notebookRoot) {
+		fail(`${panel.title ?? panel.id}: ${panel.reason ?? 'it cannot be packaged'}`);
+	}
+	const id = `${prefix}.${panel.id}`;
+	// Only the folders the toolbox ships are renamed: a file the TOML names elsewhere (in another
+	// toolbox, say) keeps resolving where it did in Pollis
+	const shipped = new Set([...(panel.wikis ?? []), ...(panel.notebooks ?? [])].map(file => file.split('/')[0]));
+	const renames = new Map([...shipped].map(f => [f, `${prefix}.${f}`]));
+	for (const [kind, root, files] of /** @type {const} */ ([['wiki', wikiRoot, panel.wikis], ['notebooks', notebookRoot, panel.notebooks]])) {
+		for (const file of files ?? []) {
+			const [from, ...rest] = file.split('/');
+			const to = /** @type {string} */ (renames.get(from));
+			claimFolder(kind, to, `${root}/${from}`);
+			downloads.push({ from: `${root}/${file}`, to: path.join(folder, kind, to, ...rest) });
+		}
+	}
+	return {
+		panelId: panel.id,
+		title: panel.title ?? panel.id,
+		menuTitle: command?.menuTitles[0],
+		defaultModel: command?.model ?? panel.defaultModel,
+		decisionFirstColumn: panel.decisionFirstColumn,
+		packages: panel.packages ?? [],
+		summary: `${panel.wikis?.length ?? 0} wiki files, ${panel.notebooks?.length ?? 0} notebook files`,
+		write: async () => {
+			const text = (await source.read(toml)).toString('utf-8');
+			const { wiki, notebooks } = materialEntries(parser.parseToml(text));
+			const expected = [...wiki, ...notebooks].filter(entry => typeof entry.file === 'string' && renames.has(entry.file.split('/')[0])).length;
+			writeFile(path.join(folder, 'panels', `${id}.toml`), renameMaterial(text, renames, expected));
+		},
+	};
+}
+
+/**
+ * A copy of a panel of the user's own: a panel TOML that passes the validator, with the wiki and
+ * notebook folders next to it.
+ * @param {string} file
+ * @param {{ parser: Parser; index: PanelIndex; prefix: string; folder: string; claimFolder: ClaimFolder }} context
+ * @returns {PanelCopy}
+ */
+function localPanel(file, { parser, index, prefix, folder, claimFolder }) {
+	if (!fs.existsSync(file)) {
+		fail(`the panel ${file} does not exist`);
+	}
+	const panelId = path.basename(file, '.toml');
+	if (!file.endsWith('.toml') || !NAME.test(panelId)) {
+		fail(`the panel file ${path.basename(file)} must be named <id>.toml, the id in lower case letters, digits and hyphens`);
+	}
+	const text = fs.readFileSync(file, 'utf-8');
+	const roots = materialRoots(file);
+	const report = validate(file, text, parser, { ...roots, builtIn: builtInFiles(index) });
+	if (report.errors.length) {
+		const errors = sortedProblems(report).filter(problem => problem.kind === 'error').map(problem => `  ${file}:${problem.line}: ${problem.message}`);
+		fail([`the panel ${file} has errors:`, ...errors, 'Fix them, and check it again with validatePanel.mjs.'].join('\n'));
+	}
+	if (report.warnings.length) {
+		console.warn(`Warning: the panel ${file} has ${report.warnings.length} warnings: run validatePanel.mjs on it to see them`);
+	}
+	const toml = parser.parseToml(text);
+	const meta = /** @type {TomlTable} */ (toml.meta);
+	// The folders of the files found next to the panel are copied; the other files are Pollis' own
+	/** @type {Map<string, string>} */
+	const renames = new Map();
+	/** @type {{ kind: string; from: string; to: string }[]} */
+	const folders = [];
+	let expected = 0;
+	const counts = { wiki: 0, notebooks: 0 };
+	for (const [kind, entries] of Object.entries(materialEntries(toml))) {
+		const kindRoots = kind === 'wiki' ? roots.wiki : roots.notebooks;
+		for (const entry of entries) {
+			const entryFile = entry.file;
+			const root = typeof entryFile === 'string' ? kindRoots.find(candidate => fs.existsSync(path.join(candidate, entryFile))) : undefined;
+			if (typeof entryFile !== 'string' || !root) {
+				continue;
+			}
+			const from = entryFile.split('/')[0];
+			const to = `${prefix}.${from}`;
+			claimFolder(kind, to, path.join(root, from));
+			renames.set(from, to);
+			folders.push({ kind, from: path.join(root, from), to: path.join(folder, kind, to) });
+			counts[kind === 'wiki' ? 'wiki' : 'notebooks']++;
+			expected++;
+		}
+	}
+	const id = `${prefix}.${panelId}`;
+	return {
+		panelId,
+		title: String(meta.title),
+		defaultModel: String(meta.defaultModel),
+		decisionFirstColumn: typeof meta.decisionFirstColumn === 'string' ? meta.decisionFirstColumn : undefined,
+		packages: tables(toml.packages).map(pkg => String(pkg.name)),
+		summary: `${counts.wiki} wiki files, ${counts.notebooks} notebook files, from ${path.dirname(file)}`,
+		write: async () => {
+			writeFile(path.join(folder, 'panels', `${id}.toml`), renameMaterial(text, renames, expected));
+			for (const copy of folders) {
+				fs.cpSync(copy.from, copy.to, { recursive: true });
+			}
+		},
+	};
+}
+
 /** @param {string} file */
 function writeFile(file, /** @type {string | Buffer} */ data) {
 	fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -357,7 +317,8 @@ function writeFile(file, /** @type {string | Buffer} */ data) {
  * @param {Source} source @param {string} specFile @param {string} outDir @param {boolean} overwrite
  */
 async function build(source, specFile, outDir, overwrite) {
-	const spec = parseToml(fs.readFileSync(specFile, 'utf-8'));
+	const [index, parser] = await Promise.all([source.index(), source.parser()]);
+	const spec = parseSpec(parser, fs.readFileSync(specFile, 'utf-8'));
 	const extension = /** @type {TomlTable | undefined} */ (spec.extension);
 	const menus = /** @type {TomlTable[]} */ (Array.isArray(spec.menu) ? spec.menu : []);
 	if (!extension || typeof extension.name !== 'string' || typeof extension.displayName !== 'string' || !menus.length) {
@@ -386,16 +347,24 @@ async function build(source, specFile, outDir, overwrite) {
 		fs.rmSync(folder, { recursive: true });
 	}
 
-	const index = await source.index();
-	/** @type {Map<string, IndexPanel>} the panels by panel id, to find the ones listed twice */
-	const seen = new Map();
+	/** @type {Set<string>} the copies' panel ids, to find the panels listed twice */
+	const seen = new Set();
 	/** @type {Map<string, string>} the source of each copied folder, `wiki:<new folder>` -> `<root>/<folder>` */
 	const copiedFolders = new Map();
+	/** @param {string} kind @param {string} to @param {string} origin */
+	const claimFolder = (kind, to, origin) => {
+		const key = `${kind}:${to}`;
+		if (copiedFolders.has(key) && copiedFolders.get(key) !== origin) {
+			fail(`two panels use different ${kind} folders named ${to.slice(prefix.length + 1)} (${copiedFolders.get(key)} and ${origin})`);
+		}
+		copiedFolders.set(key, origin);
+	};
 	/** @type {{ from: string; to: string }[]} */
 	const downloads = [];
 	const toolboxes = [];
 	const readmeRows = [];
-	const panelTomls = [];
+	/** @type {{ id: string; title: string; summary: string; write: () => Promise<void> }[]} */
+	const copies = [];
 	for (const menu of menus) {
 		if (typeof menu.id !== 'string' || typeof menu.title !== 'string') {
 			fail('every [[menu]] needs an id and a title');
@@ -409,30 +378,28 @@ async function build(source, specFile, outDir, overwrite) {
 		}
 		const panels = [];
 		for (const [position, item] of items.entries()) {
-			const { panel, command } = resolveItem(index, item);
-			if (!panel.portable || !panel.toml || !panel.wikiRoot || !panel.notebookRoot) {
-				fail(`${panel.title ?? panel.id}: ${panel.reason ?? 'it cannot be packaged'}`);
+			const copy = typeof item.toml === 'string'
+				? localPanel(path.resolve(path.dirname(specFile), item.toml), { parser, index, prefix, folder, claimFolder })
+				: pollisPanel(resolveItem(index, item), { parser, source, prefix, folder, claimFolder, downloads });
+			const id = `${prefix}.${copy.panelId}`;
+			if (seen.has(id)) {
+				fail(`the panel ${copy.panelId} is listed twice`);
 			}
-			if (seen.has(panel.id)) {
-				fail(`the panel ${panel.id} is listed twice`);
-			}
-			seen.set(panel.id, panel);
-			const id = `${prefix}.${panel.id}`;
-			const title = panel.title ?? panel.id;
-			const menuTitle = typeof item.title === 'string' ? item.title : command?.menuTitles[0];
-			panelTomls.push({ panel, id });
+			seen.add(id);
+			const menuTitle = typeof item.title === 'string' ? item.title : copy.menuTitle;
+			copies.push({ id, title: copy.title, summary: copy.summary, write: copy.write });
 			panels.push({
 				id,
-				command: `pollis.${name}.${panel.id}`,
-				title,
-				...(menuTitle && menuTitle !== title ? { menuTitle } : {}),
+				command: `pollis.${name}.${copy.panelId}`,
+				title: copy.title,
+				...(menuTitle && menuTitle !== copy.title ? { menuTitle } : {}),
 				group: typeof item.group === 'string' ? item.group : menu.inline === true && typeof menu.group === 'string' ? menu.group : '1_panels',
 				order: typeof item.order === 'number' ? item.order : position + 1,
 				data: `panels/${id}.toml`,
-				defaultModel: command?.model ?? panel.defaultModel,
-				...(panel.decisionFirstColumn ? { decisionFirstColumn: panel.decisionFirstColumn } : {}),
+				defaultModel: copy.defaultModel,
+				...(copy.decisionFirstColumn ? { decisionFirstColumn: copy.decisionFirstColumn } : {}),
 			});
-			readmeRows.push(`| ${menuTitle ?? title} | TODO | ${(panel.packages ?? []).join(', ')} |`);
+			readmeRows.push(`| ${menuTitle ?? copy.title} | TODO | ${copy.packages.join(', ')} |`);
 		}
 		toolboxes.push({
 			id: menu.id,
@@ -446,28 +413,7 @@ async function build(source, specFile, outDir, overwrite) {
 	}
 
 	// The panels' TOMLs, their wiki and notebook folders renamed <prefix>.<folder>
-	await eachLimited(panelTomls, 8, async ({ panel, id }) => {
-		const text = (await source.read(/** @type {string} */(panel.toml))).toString('utf-8');
-		// Only the folders the toolbox ships are renamed: a file the TOML names elsewhere (in another
-		// toolbox, say) keeps resolving where it did in Pollis
-		const shipped = new Set([...(panel.wikis ?? []), ...(panel.notebooks ?? [])].map(file => file.split('/')[0]));
-		const renames = new Map([...shipped].map(f => [f, `${prefix}.${f}`]));
-		const entries = materialEntries(parseToml(text)).filter(entry => typeof entry.file === 'string' && renames.has(entry.file.split('/')[0]));
-		writeFile(path.join(folder, 'panels', `${id}.toml`), renameMaterial(text, renames, entries.length));
-		for (const [kind, root, files] of /** @type {const} */ ([['wiki', panel.wikiRoot, panel.wikis], ['notebooks', panel.notebookRoot, panel.notebooks]])) {
-			for (const file of files ?? []) {
-				const [from, ...rest] = file.split('/');
-				const to = /** @type {string} */ (renames.get(from));
-				const key = `${kind}:${to}`;
-				const origin = `${root}/${from}`;
-				if (copiedFolders.has(key) && copiedFolders.get(key) !== origin) {
-					fail(`two panels use different ${kind} folders named ${from} (${copiedFolders.get(key)} and ${origin})`);
-				}
-				copiedFolders.set(key, origin);
-				downloads.push({ from: `${root}/${file}`, to: path.join(folder, kind, to, ...rest) });
-			}
-		}
-	});
+	await eachLimited(copies, 8, copy => copy.write());
 	const unique = [...new Map(downloads.map(download => [download.to, download])).values()];
 	let done = 0;
 	await eachLimited(unique, 8, async download => {
@@ -523,10 +469,10 @@ async function build(source, specFile, outDir, overwrite) {
 		'',
 	].join('\n'));
 
-	for (const { panel, id } of panelTomls) {
-		console.log(`${id}: ${panel.title ?? panel.id} (${panel.wikis?.length ?? 0} wiki files, ${panel.notebooks?.length ?? 0} notebook files)`);
+	for (const copy of copies) {
+		console.log(`${copy.id}: ${copy.title} (${copy.summary})`);
 	}
-	console.log(`Wrote ${folder}/ (${panelTomls.length} panels).`);
+	console.log(`Wrote ${folder}/ (${copies.length} panels).`);
 	return folder;
 }
 

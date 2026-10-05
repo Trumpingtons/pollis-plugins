@@ -8,10 +8,10 @@
 	},
 	"plugins": [
 		{
-			"name": "pollis-extension-agent",
-			"description": "Build your own Pollis toolbox: pick Pollis panels, put them in the menus and order you want, and get a .vsix to install or share (for example, one toolbox per course).",
+			"name": "pollis-agents",
+			"description": "Build your own Pollis toolbox from the panels you pick, and create new panels on topics Pollis does not cover: a panel TOML, wiki pages and notebook tutorials, checked and packaged as a .vsix to install or share (for example, one toolbox per course).",
 			"version": "1.0.0",
-			"source": "./plugins/pollis-extension-agent"
+			"source": "./plugins/pollis-agents"
 		}
 	]
 }

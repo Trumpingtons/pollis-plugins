@@ -1,0 +1,12 @@
+{
+	"name": "pollis-agents",
+	"description": "Build your own Pollis toolbox from the panels you pick, and create new panels on topics Pollis does not cover: a panel TOML, wiki pages and notebook tutorials, checked and packaged as a .vsix to install or share (for example, one toolbox per course).",
+	"version": "1.0.0",
+	"author": {
+		"name": "Antonio Saragga Seabra"
+	},
+	"homepage": "https://github.com/Trumpingtons/pollis-plugins/tree/main/plugins/pollis-agents",
+	"repository": "https://github.com/Trumpingtons/pollis-plugins",
+	"license": "AGPL-3.0-or-later",
+	"keywords": ["pollis", "toolbox", "extension", "panel", "teaching"]
+}
