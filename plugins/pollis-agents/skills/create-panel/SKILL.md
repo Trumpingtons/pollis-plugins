@@ -48,7 +48,7 @@ end
 ```
 
 - `toolbox` (once): `name` (`pollis-toolbox-...`), `displayName`, and optional `description`, `author`, `version`.
-- `panel` (once per panel): `topic`, `methods` (1 to 8: the tabs), and optional `audience`, `packages`, `menu`, `title`, `id`, `notes`. `menu` is a top menu (Toolboxes, Explore, Model, Simulate, Optimise) or a submenu id, then optionally `>` and the title of a submenu; default `Toolboxes > <displayName>`. `notes` is anything else the user wants, in their words.
+- `panel` (once per panel): `topic`, `methods` (1 to 8: the tabs), and optional `audience`, `packages`, `menu`, `title`, `id`, `notes`. `menu` is a top menu (Compose, Explore, Model, Simulate, Optimise) or a submenu id, then optionally `>` and the title of a submenu; default `Compose > <displayName>`. `notes` is anything else the user wants, in their words.
 
 Never interpret the Julia yourself: run it with `readRequest.jl`, in the same `scripts` folder:
 

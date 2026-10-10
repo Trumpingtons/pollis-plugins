@@ -42,7 +42,7 @@
 //   [[menu]]                               one or more: where the entries go
 //   id = "stats101"
 //   title = "Statistics 101"               the submenu's title
-//   menu = "Toolboxes"                     Toolboxes, Explore, Model, Simulate, Optimise or a submenu id
+//   menu = "Model"                         Compose (formerly Toolboxes), Explore, Model, Simulate, Optimise or a submenu id
 //   inline = false                         true: the entries go straight into that menu, no submenu
 //   group = "2_toolboxes"                  optional, the group and order of the submenu in that menu
 //   order = 4
@@ -445,7 +445,7 @@ async function build(source, specFile, outDir, overwrite) {
 	writeFile(path.join(folder, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');
 
 	const where = toolboxes.map(toolbox => {
-		const parent = toolbox.menu ?? 'Toolboxes';
+		const parent = toolbox.menu ?? 'Compose';
 		return toolbox.inline ? `adds its panels to the **${parent}** menu` : `adds the **${toolbox.title}** submenu to the **${parent}** menu`;
 	}).join(', and ');
 	writeFile(path.join(folder, 'README.md'), [

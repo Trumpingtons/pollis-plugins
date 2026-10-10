@@ -36,7 +36,7 @@ author = "Ana Silva"                 # optional: shown in Pollis as the publishe
 [[menu]]                             # one or more
 id = "stats101"
 title = "Statistics 101"             # the submenu's title
-menu = "Toolboxes"                   # Toolboxes (default), Explore, Model, Simulate, Optimise or a submenu id
+menu = "Model"                       # Compose (default; formerly Toolboxes), Explore, Model, Simulate, Optimise or a submenu id
 group = "2_toolboxes"                # optional: where the submenu goes in that menu
 order = 1
 

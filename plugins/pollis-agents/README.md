@@ -9,7 +9,7 @@ Each panel in the toolbox is an independent copy of the Pollis panel, with its k
 
 ## Install the plugin
 
-In Pollis, there is nothing to install: use **Toolboxes > Pollis Agents > Create a Panel...** or **Package a Toolbox...**. Pollis downloads the skills (the files listed in `files.json`) to `~/.pollis/agents/pollis-agents` and starts a coding agent in a terminal, pointed at the skill. The first time, it asks which agent to use: Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Cursor Agent, OpenCode or Goose (the last two can also run on local models, through Ollama or LM Studio), or any other command; change it later with **Pollis Agents: Choose Coding Agent...**. Creating a panel asks a lot of the model: a small local model will make mistakes the validator cannot catch.
+In Pollis, there is nothing to install: use **Compose > Pollis Agents > Create a Panel...** or **Package a Toolbox...**. Pollis downloads the skills (the files listed in `files.json`) to `~/.pollis/agents/pollis-agents` and starts a coding agent in a terminal, pointed at the skill. The first time, it asks which agent to use: Claude Code, Codex, Gemini CLI, GitHub Copilot CLI, Cursor Agent, OpenCode or Goose (the last two can also run on local models, through Ollama or LM Studio), or any other command; change it later with **Pollis Agents: Choose Coding Agent...**. Creating a panel asks a lot of the model: a small local model will make mistakes the validator cannot catch.
 
 In Claude Code, the plugin can also be installed directly: `/plugin marketplace add Trumpingtons/pollis-plugins`, then `/plugin install pollis-agents@pollis`.
 
@@ -47,7 +47,7 @@ panel = "ht"
 title = "3. Hypothesis Tests"
 ```
 
-`menu` is Toolboxes, Explore, Model, Simulate, Optimise or the id of a submenu; `inline = true` puts the entries straight into that menu instead of a submenu of their own. The full format is at the top of `scripts/makeToolbox.mjs`.
+`menu` is Compose (formerly Toolboxes), Explore, Model, Simulate, Optimise or the id of a submenu; `inline = true` puts the entries straight into that menu instead of a submenu of their own. The full format is at the top of `scripts/makeToolbox.mjs`.
 
 You can also run the builder yourself:
 
